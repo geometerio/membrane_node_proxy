@@ -12,7 +12,7 @@ defmodule Membrane.NodeProxy.Sink do
 
   defmodule SourceAddress do
     @moduledoc false
-    defstruct interfaces: nil,
+    defstruct addresses: [],
               preferred_addr: nil,
               port: nil
   end
@@ -46,11 +46,16 @@ defmodule Membrane.NodeProxy.Sink do
 
   @impl true
   def handle_event(Pad.ref(:data_channel, source_id), %SourceReadyEvent{} = event, _ctx, state) do
-    remote_source = %SourceAddress{interfaces: event.interfaces, port: event.port}
+    remote_source = %SourceAddress{addresses: event.addresses, port: event.port}
     remote_sources = Map.put(state.remote_sources, source_id, remote_source)
 
-    for interface <- remote_source.interfaces do
-      :gen_udp.send(state.socket, interface, remote_source.port, "syn:" <> source_id)
+    for address <- remote_source.addresses do
+      :gen_udp.send(
+        state.socket,
+        Keyword.fetch!(address, :addr),
+        remote_source.port,
+        "syn:" <> source_id
+      )
     end
 
     {:ok, %{state | remote_sources: remote_sources}}

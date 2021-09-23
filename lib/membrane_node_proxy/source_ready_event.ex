@@ -4,5 +4,9 @@ defmodule Membrane.NodeProxy.SourceReadyEvent do
   information for how to message it.
   """
   @derive Membrane.EventProtocol
-  defstruct [:port, :interfaces, :node]
+  defstruct [
+    :addresses,
+    :port,
+    :node
+  ]
 end

@@ -14,15 +14,17 @@ defmodule Membrane.NodeProxy.Source do
   defmodule State do
     @moduledoc false
     @enforce_keys [:port, :socket]
-    defstruct port: nil, socket: nil, packet_buffer: {nil, <<>>}
+    defstruct addresses: %{}, port: nil, socket: nil, packet_buffer: {nil, <<>>}
   end
 
   @impl true
   def handle_init(_opts) do
-    with {:ok, socket} <- :gen_udp.open(0, [:binary]),
+    with {:ok, addresses} <- Inet.private_addresses(),
+         {:ok, addresses_with_attributes} <- Inet.merge_attributes(addresses),
+         {:ok, socket} <- :gen_udp.open(0, [:binary]),
          {:ok, port} <- :inet.port(socket) do
       Membrane.Logger.debug("starting track source on node #{node()}")
-      {:ok, %State{port: port, socket: socket}}
+      {:ok, %State{addresses: addresses_with_attributes, port: port, socket: socket}}
     else
       {:error, error} ->
         Membrane.Logger.error("""
@@ -53,7 +55,7 @@ defmodule Membrane.NodeProxy.Source do
         {:data_channel,
          %SourceReadyEvent{
            port: state.port,
-           interfaces: Inet.private_addresses(),
+           addresses: Map.values(state.addresses),
            node: node()
          }}}, state}
   end
