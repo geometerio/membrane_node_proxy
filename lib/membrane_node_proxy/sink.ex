@@ -20,7 +20,7 @@ defmodule Membrane.NodeProxy.Sink do
   @impl true
   def handle_init(_opts) do
     {:ok, socket} = :gen_udp.open(0, [:binary])
-    {:ok, %{remote_sources: %{}, socket: socket}}
+    {:ok, %{remote_sources: %{}, socket: socket, enabled?: false}}
   end
 
   @impl true
@@ -34,7 +34,9 @@ defmodule Membrane.NodeProxy.Sink do
   def handle_pad_removed(Pad.ref(:data_channel, source_id), _ctx, state) do
     ### source was stopped or crashed on a remote endpoint
     Membrane.Logger.debug("data channel pad removed for #{inspect(source_id)}")
-    {:ok, state}
+    remote_sources = Map.delete(state.remote_source, source_id)
+    enabled? = remote_sources != %{}
+    {:ok, %{state | remote_sources: remote_sources, enabled?: enabled?}}
   end
 
   @impl true
@@ -48,7 +50,7 @@ defmodule Membrane.NodeProxy.Sink do
     remote_sources = Map.put(state.remote_sources, source_id, remote_source)
 
     for interface <- remote_source.interfaces do
-      :gen_udp.send(state.socket, interface, remote_source.port, "ping:" <> source_id)
+      :gen_udp.send(state.socket, interface, remote_source.port, "syn:" <> source_id)
     end
 
     {:ok, %{state | remote_sources: remote_sources}}
@@ -59,31 +61,51 @@ defmodule Membrane.NodeProxy.Sink do
   end
 
   @impl true
-  def handle_other({:udp, _port, ip, _remote_port, "pong:" <> source_id}, _ctx, state) do
-    remote_source = Map.put(state.remote_sources[source_id], :preferred_addr, ip)
-    {:ok, %{state | remote_sources: Map.put(state.remote_sources, source_id, remote_source)}}
+  def handle_other({:udp, _port, ip, _remote_port, "ack:" <> source_id}, _ctx, state) do
+    remote_source =
+      state.remote_sources[source_id]
+      |> add_preferred_addr(ip)
+
+    {:ok,
+     %{
+       state
+       | remote_sources: Map.put(state.remote_sources, source_id, remote_source),
+         enabled?: true
+     }}
   end
 
   @impl true
+  def handle_write_list(:input, buffers, _cxt, %{enabled?: false} = state),
+    do: {{:ok, demand: {:input, length(buffers)}}, state}
+
   def handle_write_list(:input, buffers, _ctx, state) do
     packet = Buffer.serialize(buffers)
 
-    for {_source_id, remote} <- state.remote_sources do
-      if remote.preferred_addr,
-        do: :gen_udp.send(state.socket, remote.preferred_addr, remote.port, packet)
+    for {_source_id, remote} <- state.remote_sources,
+        !is_nil(remote.preferred_addr) do
+      :gen_udp.send(state.socket, remote.preferred_addr, remote.port, packet)
     end
 
     {{:ok, demand: {:input, length(buffers)}}, state}
   end
 
   @impl true
+  def handle_write(:input, _buffer, _cxt, %{enabled?: false} = state),
+    do: {{:ok, demand: :input}, state}
+
   def handle_write(:input, %Membrane.Buffer{} = buffer, _ctx, state) do
     packet = Buffer.serialize(buffer)
 
-    for {_source_id, remote} <- state.remote_sources do
+    for {_source_id, remote} <- state.remote_sources,
+        !is_nil(remote.preferred_addr) do
       :gen_udp.send(state.socket, remote.addr, remote.port, packet)
     end
 
     {{:ok, demand: :input}, state}
   end
+
+  defp add_preferred_addr(%SourceAddress{preferred_addr: nil} = source, addr),
+    do: %{source | preferred_addr: addr}
+
+  defp add_preferred_addr(source, _addr), do: source
 end

@@ -4,6 +4,7 @@ defmodule Membrane.NodeProxy.Source do
   """
   use Membrane.Source
   alias Membrane.NodeProxy.Buffer
+  alias Membrane.NodeProxy.Inet
   alias Membrane.NodeProxy.SourceReadyEvent
   require Membrane.Logger
 
@@ -52,14 +53,14 @@ defmodule Membrane.NodeProxy.Source do
         {:data_channel,
          %SourceReadyEvent{
            port: state.port,
-           interfaces: interfaces(),
+           interfaces: Inet.private_addresses(),
            node: node()
          }}}, state}
   end
 
   @impl true
-  def handle_other({:udp, _port, ip, remote_port, "ping:" <> id}, _ctx, state) do
-    :gen_udp.send(state.socket, ip, remote_port, "pong:" <> id)
+  def handle_other({:udp, _port, ip, remote_port, "syn:" <> id}, _ctx, state) do
+    :gen_udp.send(state.socket, ip, remote_port, "ack:" <> id)
     {:ok, state}
   end
 
@@ -83,24 +84,5 @@ defmodule Membrane.NodeProxy.Source do
     Membrane.Logger.warn("port died")
     # stop(self())
     {:ok, state}
-  end
-
-  defp interfaces() do
-    {:ok, interfaces} = :inet.getif()
-
-    interfaces
-    |> Enum.reduce([], fn
-      {{10, _, _, _} = interface, _, _}, acc ->
-        [interface | acc]
-
-      {{192, 168, _, _} = interface, _, _}, acc ->
-        [interface | acc]
-
-      {{172, block, _, _} = interface, _, _}, acc when block in 16..31 ->
-        [interface | acc]
-
-      _if, acc ->
-        acc
-    end)
   end
 end
