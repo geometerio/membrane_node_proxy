@@ -4,6 +4,7 @@ defmodule Membrane.NodeProxy.Sink do
   """
   use Membrane.Sink
   alias Membrane.NodeProxy.Buffer
+  alias Membrane.NodeProxy.Inet
   alias Membrane.NodeProxy.SourceReadyEvent
   require Membrane.Logger
 
@@ -13,14 +14,24 @@ defmodule Membrane.NodeProxy.Sink do
   defmodule SourceAddress do
     @moduledoc false
     defstruct addresses: [],
+              mtu: nil,
               preferred_addr: nil,
               port: nil
+  end
+
+  defmodule State do
+    @moduledoc false
+    @enforce_keys [:socket]
+    defstruct enabled?: false,
+              global_mtu: nil,
+              remote_sources: %{},
+              socket: nil
   end
 
   @impl true
   def handle_init(_opts) do
     {:ok, socket} = :gen_udp.open(0, [:binary])
-    {:ok, %{remote_sources: %{}, socket: socket, enabled?: false}}
+    {:ok, %State{socket: socket}}
   end
 
   @impl true
@@ -70,12 +81,19 @@ defmodule Membrane.NodeProxy.Sink do
     remote_source =
       state.remote_sources[source_id]
       |> add_preferred_addr(ip)
+      |> add_mtu(ip)
+
+    global_mtu =
+      if state.global_mtu,
+        do: Enum.min(state.global_mtu, remote_source.mtu),
+        else: remote_source.mtu
 
     {:ok,
      %{
        state
-       | remote_sources: Map.put(state.remote_sources, source_id, remote_source),
-         enabled?: true
+       | enabled?: true,
+         global_mtu: global_mtu,
+         remote_sources: Map.put(state.remote_sources, source_id, remote_source)
      }}
   end
 
@@ -83,12 +101,20 @@ defmodule Membrane.NodeProxy.Sink do
   def handle_write_list(:input, buffers, _cxt, %{enabled?: false} = state),
     do: {{:ok, demand: {:input, length(buffers)}}, state}
 
-  def handle_write_list(:input, buffers, _ctx, state) do
+  def handle_write_list(:input, buffers, ctx, state) do
     packet = Buffer.serialize(buffers)
 
-    for {_source_id, remote} <- state.remote_sources,
-        !is_nil(remote.preferred_addr) do
-      :gen_udp.send(state.socket, remote.preferred_addr, remote.port, packet)
+    if byte_size(packet) < state.global_mtu do
+      for {_source_id, remote} <- state.remote_sources,
+          !is_nil(remote.preferred_addr) do
+        :gen_udp.send(state.socket, remote.preferred_addr, remote.port, packet)
+      end
+    else
+      Membrane.Logger.warn("buffer list exceeds MTU, sending individual packets")
+
+      for buffer <- buffers do
+        handle_write(:input, buffer, ctx, state)
+      end
     end
 
     {{:ok, demand: {:input, length(buffers)}}, state}
@@ -102,7 +128,7 @@ defmodule Membrane.NodeProxy.Sink do
     packet = Buffer.serialize(buffer)
 
     for {_source_id, remote} <- state.remote_sources,
-        !is_nil(remote.preferred_addr) do
+        !is_nil(remote.preferred_addr) and !is_nil(remote.mtu) do
       :gen_udp.send(state.socket, remote.addr, remote.port, packet)
     end
 
@@ -113,4 +139,25 @@ defmodule Membrane.NodeProxy.Sink do
     do: %{source | preferred_addr: addr}
 
   defp add_preferred_addr(source, _addr), do: source
+
+  @spec add_mtu(RemoteSource.t(), Inet.inet_addr()) :: RemoteSource.t()
+  def add_mtu(remote_source, ip) do
+    case remote_source do
+      %{mtu: nil} = source ->
+        mtu =
+          source.addresses
+          |> Enum.find_value(fn
+            [addr: ^ip, mtu: mtu] ->
+              mtu
+
+            _addr ->
+              nil
+          end)
+
+        %{source | mtu: mtu}
+
+      _source ->
+        remote_source
+    end
+  end
 end
