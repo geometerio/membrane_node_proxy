@@ -13,6 +13,7 @@ defmodule Membrane.NodeProxy.Sink do
 
   defmodule SourceAddress do
     @moduledoc false
+    @type t() :: %__MODULE__{}
     defstruct addresses: [],
               mtu: nil,
               preferred_addr: nil,
@@ -21,6 +22,7 @@ defmodule Membrane.NodeProxy.Sink do
 
   defmodule State do
     @moduledoc false
+    @type t() :: %__MODULE__{}
     @enforce_keys [:socket]
     defstruct enabled?: false,
               global_mtu: nil,
@@ -140,7 +142,7 @@ defmodule Membrane.NodeProxy.Sink do
 
   defp add_preferred_addr(source, _addr), do: source
 
-  @spec add_mtu(RemoteSource.t(), Inet.inet_addr()) :: RemoteSource.t()
+  @spec add_mtu(SourceAddress.t(), Inet.inet_addr()) :: SourceAddress.t()
   def add_mtu(remote_source, ip) do
     case remote_source do
       %{mtu: nil} = source ->
