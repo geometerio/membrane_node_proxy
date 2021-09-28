@@ -4,6 +4,7 @@ defmodule Membrane.NodeProxy.Sink do
   """
   use Membrane.Sink
   alias Membrane.NodeProxy.Buffer
+  alias Membrane.NodeProxy.Config
   alias Membrane.NodeProxy.Inet
   alias Membrane.NodeProxy.SourceReadyEvent
   require Membrane.Logger
@@ -32,7 +33,11 @@ defmodule Membrane.NodeProxy.Sink do
 
   @impl true
   def handle_init(_opts) do
-    {:ok, socket} = :gen_udp.open(0, [:binary])
+    {:ok, socket} =
+      if Config.supports_inet_socket?(),
+        do: :gen_udp.open(0, [{:inet_backend, :socket}, :binary]),
+        else: :gen_udp.open(0, [:binary])
+
     {:ok, %State{socket: socket}}
   end
 

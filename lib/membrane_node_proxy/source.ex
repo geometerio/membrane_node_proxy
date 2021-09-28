@@ -4,6 +4,7 @@ defmodule Membrane.NodeProxy.Source do
   """
   use Membrane.Source
   alias Membrane.NodeProxy.Buffer
+  alias Membrane.NodeProxy.Config
   alias Membrane.NodeProxy.Inet
   alias Membrane.NodeProxy.SourceReadyEvent
   require Membrane.Logger
@@ -21,7 +22,7 @@ defmodule Membrane.NodeProxy.Source do
   def handle_init(_opts) do
     with {:ok, addresses} <- Inet.private_addresses(),
          {:ok, addresses_with_attributes} <- Inet.merge_attributes(addresses),
-         {:ok, socket} <- :gen_udp.open(0, [:binary]),
+         {:ok, socket} <- open_socket(),
          {:ok, port} <- :inet.port(socket) do
       Membrane.Logger.debug("starting track source on node #{node()}")
       {:ok, %State{addresses: addresses_with_attributes, port: port, socket: socket}}
@@ -86,5 +87,11 @@ defmodule Membrane.NodeProxy.Source do
     Membrane.Logger.warn("port died")
     # stop(self())
     {:ok, state}
+  end
+
+  defp open_socket() do
+    if Config.supports_inet_socket?(),
+      do: :gen_udp.open(0, [{:inet_backend, :socket}, :binary]),
+      else: :gen_udp.open(0, [:binary])
   end
 end

@@ -14,6 +14,7 @@ defmodule MembraneNodeProxy.MixProject do
 
   def application do
     [
+      mod: {Membrane.NodeProxy, []},
       extra_applications: [:logger]
     ]
   end
