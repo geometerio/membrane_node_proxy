@@ -1,5 +1,6 @@
 defmodule Membrane.NodeProxy.Buffer do
   @moduledoc false
+  require Membrane.Logger
 
   @spec parse(data :: binary(), accumulator :: {length :: integer() | nil, buffer :: binary()}) ::
           any()
@@ -13,7 +14,15 @@ defmodule Membrane.NodeProxy.Buffer do
 
   defp parse({length, packet, acc}) when byte_size(packet) >= length do
     <<packet::binary-size(length), rest::binary()>> = packet
-    parse({nil, rest, [deserialize(packet) | acc]})
+
+    case deserialize(packet) do
+      {:ok, payload} ->
+        parse({nil, rest, [payload | acc]})
+
+      :error ->
+        Membrane.Logger.error("unable to deserialize packet")
+        parse({nil, rest, acc})
+    end
   end
 
   defp parse({length, packet, acc}), do: {:ok, Enum.reverse(acc), {length, packet}}
@@ -25,6 +34,9 @@ defmodule Membrane.NodeProxy.Buffer do
   end
 
   defp deserialize(packet) do
-    :erlang.binary_to_term(packet)
+    {:ok, :erlang.binary_to_term(packet)}
+  rescue
+    _ ->
+      :error
   end
 end
