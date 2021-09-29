@@ -15,7 +15,7 @@ defmodule Membrane.NodeProxy.Source do
   defmodule State do
     @moduledoc false
     @enforce_keys [:port, :socket]
-    defstruct addresses: %{}, port: nil, socket: nil, packet_buffer: {nil, <<>>}
+    defstruct addresses: %{}, port: nil, socket: nil
   end
 
   @impl true
@@ -68,7 +68,7 @@ defmodule Membrane.NodeProxy.Source do
   end
 
   def handle_other({:udp, _port, _ip, _remote_port, data}, ctx, state) do
-    {:ok, buffers, packet_buffer} = Buffer.parse(data, state.packet_buffer)
+    {:ok, buffers} = Buffer.parse(data)
 
     actions =
       ctx.pads
@@ -80,7 +80,7 @@ defmodule Membrane.NodeProxy.Source do
           acc ++ [buffer: {pad_name, buffers}]
       end)
 
-    {{:ok, actions}, %{state | packet_buffer: packet_buffer}}
+    {{:ok, actions}, state}
   end
 
   def handle_other({_port, :eof}, _ctx, state) do

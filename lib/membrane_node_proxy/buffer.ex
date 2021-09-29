@@ -2,35 +2,21 @@ defmodule Membrane.NodeProxy.Buffer do
   @moduledoc false
   require Membrane.Logger
 
-  @spec parse(data :: binary(), accumulator :: {length :: integer() | nil, buffer :: binary()}) ::
-          any()
-  def parse(<<packet::binary()>>, {length, buffer}) do
-    {length, buffer <> packet, []}
-    |> parse()
-  end
-
-  defp parse({nil, <<length::integer-size(4)-unit(8), packet::binary()>>, acc}),
-    do: parse({length, packet, acc})
-
-  defp parse({length, packet, acc}) when byte_size(packet) >= length do
-    <<packet::binary-size(length), rest::binary()>> = packet
-
+  @spec parse(data :: binary()) :: any()
+  def parse(<<packet::binary()>>) do
     case deserialize(packet) do
       {:ok, payload} ->
-        parse({nil, rest, [payload | acc]})
+        {:ok, payload}
 
       :error ->
-        Membrane.Logger.error("unable to deserialize packet")
-        parse({nil, rest, acc})
+        Membrane.Logger.warn("unable to deserialize packet")
+        {:ok, []}
     end
   end
 
-  defp parse({length, packet, acc}), do: {:ok, Enum.reverse(acc), {length, packet}}
-
   @spec serialize(any()) :: binary()
   def serialize(buffer) do
-    payload = :erlang.term_to_binary(buffer, compressed: 1, minor_version: 2)
-    <<byte_size(payload)::integer-size(4)-unit(8)>> <> payload
+    :erlang.term_to_binary(buffer, compressed: 1, minor_version: 2)
   end
 
   defp deserialize(packet) do
