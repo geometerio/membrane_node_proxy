@@ -22,7 +22,7 @@ defmodule Membrane.NodeProxy.Buffer do
   defp deserialize(packet) do
     {:ok, :erlang.binary_to_term(packet)}
   rescue
-    _ ->
+    _error ->
       :error
   end
 end
