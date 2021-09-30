@@ -12,6 +12,9 @@ defmodule Membrane.NodeProxy.Sink do
   def_input_pad :input, caps: :any, demand_unit: :buffers
   def_input_pad :data_channel, caps: :any, availability: :on_request, mode: :push
 
+  # 20 bytes for IPv4 header, 8 bytes for UDP header
+  @udp_header_size 28
+
   defmodule SourceAddress do
     @moduledoc false
     @type t() :: %__MODULE__{}
@@ -111,7 +114,7 @@ defmodule Membrane.NodeProxy.Sink do
   def handle_write_list(:input, buffers, ctx, state) do
     packet = Buffer.serialize(buffers)
 
-    if byte_size(packet) < state.global_mtu do
+    if byte_size(packet) < state.global_mtu - @udp_header_size do
       for {_source_id, remote} <- state.remote_sources,
           !is_nil(remote.preferred_addr) do
         :gen_udp.send(state.socket, remote.preferred_addr, remote.port, packet)
